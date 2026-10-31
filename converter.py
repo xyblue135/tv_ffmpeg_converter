@@ -26,6 +26,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
+# GUI(pythonw)下调用 ffmpeg/ffprobe 等控制台程序时不弹黑框
+_NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+
 VIDEO_EXTS = {".mkv", ".mp4", ".ts", ".m2ts", ".avi", ".wmv", ".flv", ".mov", ".webm", ".mpg", ".mpeg"}
 
 TEXT_SUB_CODECS = {"subrip", "ass", "ssa", "mov_text", "webvtt", "text"}
@@ -97,7 +100,7 @@ def _capability(ffmpeg: str, test_args: List[str]) -> bool:
         r = subprocess.run(
             [ffmpeg, "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=256x256:d=0.2", "-pix_fmt", "yuv420p"]
             + test_args + ["-f", "null", "-"],
-            capture_output=True, timeout=120,
+            capture_output=True, timeout=120, creationflags=_NO_WINDOW,
         )
         return r.returncode == 0
     except Exception:
@@ -138,7 +141,8 @@ def default_tool_paths() -> Tuple[str, str]:
 
 def probe_streams(ffprobe: str, path: str) -> dict:
     cmd = [ffprobe, "-v", "error", "-show_streams", "-show_format", "-of", "json", path]
-    out = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
+    out = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
+                         creationflags=_NO_WINDOW)
     if out.returncode != 0:
         raise RuntimeError("ffprobe 失败: %s" % out.stderr.strip()[:400])
     return json.loads(out.stdout)
@@ -150,7 +154,7 @@ def detect_nvenc(ffmpeg: str) -> bool:
         r = subprocess.run(
             [ffmpeg, "-v", "error", "-f", "lavfi", "-i", "color=black:s=320x240:d=0.2",
              "-c:v", "h264_nvenc", "-f", "null", "-"],
-            capture_output=True, timeout=60,
+            capture_output=True, timeout=60, creationflags=_NO_WINDOW,
         )
         return r.returncode == 0
     except Exception:
@@ -216,7 +220,8 @@ def extract_srt(ffmpeg: str, src: str, sub_index: int, tmp_dir: str, log: Callab
     """把内嵌文本字幕轨转为 SRT(仅封包级操作,很快)。"""
     srt_path = os.path.join(tmp_dir, "subs.srt")
     cmd = [ffmpeg, "-y", "-v", "error", "-i", src, "-map", "0:%d" % sub_index, "-c:s", "srt", srt_path]
-    r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600)
+    r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+                       creationflags=_NO_WINDOW)
     if r.returncode != 0 or not os.path.isfile(srt_path):
         log("  字幕提取失败:%s" % (r.stderr or "").strip()[:200])
         return None
@@ -485,7 +490,8 @@ def _run_with_progress(cmd: List[str], duration: float,
                        cancel_event, cwd: Optional[str] = None) -> None:
     """跑 ffmpeg 主命令,解析 -progress 输出汇报进度(附带真实的 speed/fps);取消/失败抛异常。"""
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            text=True, encoding="utf-8", errors="replace", cwd=cwd)
+                            text=True, encoding="utf-8", errors="replace", cwd=cwd,
+                            creationflags=_NO_WINDOW)
     err_tail: List[str] = []
 
     def _drain_err():
